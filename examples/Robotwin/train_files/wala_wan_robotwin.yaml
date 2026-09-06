@@ -1,0 +1,148 @@
+run_id: wala_wan_robotwin
+run_root_dir: results/Checkpoints
+seed: 42
+trackers: [jsonl, wandb]
+wandb_entity: null
+wandb_project: wala_Robotwin_WAN
+
+framework:
+  name: WALA_WAN
+
+  wan:
+    base_wm: ./checkpoints/wan/Wan2.2-TI2V-5B-Diffusers
+    num_frames: 1
+    video_size: [384, 320]
+    concat_multi_camera: "robotwin"
+    freeze_backbone: false
+    freeze_text_encoder: true
+    freeze_vae: true
+    extract_layers: [-1]
+    text_max_length: 256
+    torch_dtype: bfloat16
+    resampler_layers: 2
+    resampler_num_heads: 24
+    state_injection: text # text or cross_attention
+    state_num_tokens: 8
+    state_encoder_hidden_dim: 512
+    state_cross_attention_gate_init: 0.1
+
+  dino:
+    dino_backbone: ./checkpoints/dinov3/dinov3-vitb16-pretrain-lvd1689m
+
+  action_model:
+    action_model_type: "MLP"
+    action_hidden_dim: 3072
+    condition_dim: 1024
+    action_dim: 14
+    state_dim: 14
+    future_action_window_size: 49
+    past_action_window_size: 0
+
+  transition_bottleneck:
+    training_mode: vla
+
+    dino_dim: 768
+    hidden_dim: 1024
+    num_transition_tokens: 32
+    encoder_layers: 8
+    decoder_layers: 4
+    num_heads: 8
+    max_future_steps: 64
+    max_patches: 1024
+    max_action_tokens: 256
+
+    use_depth: true
+    depth_loss_weight: 1.0
+    depth_fusion_scale: 1.0
+    depth_anything_encoder: "vitl"
+    depth_anything_ckpt: "./checkpoints/depth_anything/depth_anything_v2_vitl.pth"
+    depth_anything_input_size: 224
+    depth_anything_batch_size: 8
+    depth_source: "online"
+    depth_cache_dir: "./cache/depth_anything"
+    depth_cache_write_missing: false
+    depth_patch_size: 16
+
+    smooth_l1_weight: 1.0
+    cosine_weight: 0.1
+    composition_weight: 0
+    reencode_weight: 0
+    content_invariance_weight: 0
+    content_aug_scale_std: 0.05
+    content_aug_bias_std: 0.02
+    min_composition_steps: 2
+
+    use_transition_alignment: true
+    transition_alignment_loss_weight: 0.005
+    transition_alignment_l1_weight: 0.1
+
+    # Decoder supervision.
+    use_transition_decode: true
+    transition_decode_loss_weight: 0.5
+    transition_decode_cosine_weight: 0.1
+    transition_decode_use_all_future: true
+    depth_decoder_loss_weight: 1.0
+    depth_decoder_use_all_future: true
+
+    freeze_encoder_in_vla: true
+    train_decoder_in_vla: true
+
+  obs_image_size: null
+  lam_image_size: [224, 224]
+
+datasets:
+  vla_data:
+    dataset_py: lerobot_datasets
+    data_root_dir: /path/to/datasets/robotwin2.0
+    data_mix: robotwin_fastwam
+    sequential_step_sampling: false
+    include_state: true
+    per_device_batch_size: 4
+    video_backend: pyav
+
+trainer:
+  epochs: 100
+  max_train_steps: 200000
+  num_warmup_steps: 5000
+  save_interval: 10000
+  eval_interval: 100
+  learning_rate:
+    base: 1.0e-05
+    wan_backbone: 1.0e-05
+    wan_action_resampler: 1.0e-04
+    state_encoder: 1.0e-04
+    transition_bottleneck: 1.0e-05
+    action_model: 1.0e-04
+    latent_action_to_transition_tokens_for_encoder: 1.0e-04
+    latent_action_to_transition_tokens_for_decoder: 1.0e-04
+
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 5.0e-07
+
+  freeze_modules: 'dino_encoder,depth_anything,wan_backbone.text_encoder,wan_backbone.vae'
+
+  loss_scale:
+    vla: 1.0
+
+  pretrained_checkpoint: /path/to/pretrained_lam.pt
+  reload_modules: 'transition_bottleneck'
+
+  max_grad_norm: 1.0
+  warmup_ratio: 0.1
+  weight_decay: 0.0
+  logging_frequency: 10
+  gradient_clipping: 1.0
+  gradient_accumulation_steps: 1
+
+  optimizer:
+    name: AdamW
+    betas: [0.9, 0.95]
+    eps: 1.0e-08
+    weight_decay: 1.0e-08
+
+  is_resume: false
+  resume_epoch: null
+  resume_step: null
+  enable_gradient_checkpointing: false
+  enable_mixed_precision_training: true
